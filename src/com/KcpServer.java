@@ -7,6 +7,8 @@ import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 public class KcpServer extends KCP implements Runnable {
 
@@ -15,6 +17,7 @@ public class KcpServer extends KCP implements Runnable {
 	private static DatagramPacket datagramPacket;
 	private InetSocketAddress remote;
 	private volatile static boolean running;
+	public static List<DatagramPacket> rcv_udp_que = new ArrayList<DatagramPacket>(1024);
 	private final Object waitLock = new Object();
 	private static KCP kcp;
 
@@ -48,10 +51,8 @@ public class KcpServer extends KCP implements Runnable {
 			datagramSocket.receive(datagramPacket);
 			// System.out.println(datagramPacket.getData());
 			// System.out.println("获得数据");
-			// 调用kcp的input
-			String receStr = new String(datagramPacket.getData(), 0, datagramPacket.getLength());
-			System.out.println(receStr);
-			onReceive(receStr.getBytes());
+			rcv_udp_que.add(datagramPacket);// 放入缓冲队列
+			System.out.println("队列大小" + rcv_udp_que.size());
 		} catch (Exception e) {
 			// System.out.println("超时未获得数据");
 			e.printStackTrace();
@@ -59,17 +60,32 @@ public class KcpServer extends KCP implements Runnable {
 	}
 
 	/**
+	 * 获取消息队列第一个消息
+	 * 
+	 * @return
+	 */
+	public static String getQueUDP() {
+		if (rcv_udp_que.size() == 0) {
+			return null;
+		}
+		DatagramPacket datagramPacket = rcv_udp_que.get(0);
+		rcv_udp_que.remove(0);
+		String receiveStr = new String(datagramPacket.getData(), 0, datagramPacket.getLength());
+		return receiveStr;
+	}
+
+	/**
 	 * 开启线程处理kcp状态
 	 */
 	public void start() {
-		this.running = true;
+		KcpServer.running = true;
+		// 启动UDP数据接受线程
+		ReceiveThread receiveThread = new ReceiveThread();
+		receiveThread.start();
 		// 启动这个线程
 		Thread t = new Thread(this);
 		t.setName("kcp Server thread");
 		t.start();
-		// 启动数据接受线程
-		ReceiveThread receiveThread = new ReceiveThread();
-		receiveThread.start();
 	}
 
 	/**
@@ -124,22 +140,29 @@ public class KcpServer extends KCP implements Runnable {
 	}
 
 	/**
-	 * 开启线程处理kcp状态，为实现
+	 * 开启线程处理kcp状态
 	 */
 	@Override
 	public void run() {
 		long start, end;
 		while (running) {
 			try {
+				// 1
+				String str = getQueUDP();
+				if (str != null) {
+					// 2
+					onReceive(str.getBytes());
+				}
 				start = System.currentTimeMillis();// 开始时间
-				this.kcp.Update(start); //
+				// 3
+				KcpServer.kcp.Update(start); //
 				end = System.currentTimeMillis();// 结束时间
 				if (end - start < interval) {
 					synchronized (waitLock) {
 						try {
-							// System.out.println("等待开始");
+							System.out.println("等待开始");
 							waitLock.wait(this.interval - end + start);
-							// System.out.println("等待结束");
+							System.out.println("等待结束");
 						} catch (InterruptedException ex) {
 							ex.printStackTrace();
 						}
@@ -176,7 +199,7 @@ public class KcpServer extends KCP implements Runnable {
 		byte[] receiveByte = new byte[1024];
 		if (kcp != null) {
 			result = kcp.Input(buffer);
-			// System.out.println(result);
+			System.out.println("服务器input返回结果" + result);
 			// 返回0表示正常
 			if (result == 0) {
 				int dataLength = kcp.Recv(receiveByte);

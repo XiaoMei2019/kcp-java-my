@@ -7,11 +7,14 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class KcpClient extends KCP implements Runnable {
 
 	private static DatagramSocket datagramSocket;
 	private static DatagramPacket datagramPacket;
+	public static List<DatagramPacket> rcv_udp_que = new ArrayList<DatagramPacket>(1024);
 	private InetSocketAddress remote;
 	private volatile boolean running;
 	private final Object waitLock = new Object();
@@ -50,14 +53,26 @@ public class KcpClient extends KCP implements Runnable {
 			datagramSocket.receive(datagramPacket);
 			// System.out.println(datagramPacket.getData());
 			// System.out.println("获得数据");
-			// 调用kcp的input
-			String receStr = new String(datagramPacket.getData(), 0, datagramPacket.getLength());
-			// System.out.println(receStr);
-			onReceive(receStr.getBytes());
+			rcv_udp_que.add(datagramPacket);// 放入缓冲队列
 		} catch (Exception e) {
 			// System.out.println("超时未获得数据");
 			e.printStackTrace();
 		}
+	}
+
+	/**
+	 * 获取消息队列第一个消息
+	 * 
+	 * @return
+	 */
+	public static String getQueUDP() {
+		if (rcv_udp_que.size() == 0) {
+			return null;
+		}
+		DatagramPacket datagramPacket = rcv_udp_que.get(0);
+		rcv_udp_que.remove(0);
+		String receiveStr = new String(datagramPacket.getData(), 0, datagramPacket.getLength());
+		return receiveStr;
 	}
 
 	public void connect(InetSocketAddress addr) {
@@ -65,18 +80,17 @@ public class KcpClient extends KCP implements Runnable {
 	}
 
 	/**
-	 * a
-	 * 
 	 * 开启线程处理kcp状态
 	 */
 	public void start() {
 		this.running = true;
-		Thread t = new Thread(this);// 启动这个线程
-		t.setName("kcp client thread start");
-		t.start();
 		// 启动数据接受线程
 		ReceiveThread receiveThread = new ReceiveThread();
 		receiveThread.start();
+		// 启动这个线程
+		Thread t = new Thread(this);
+		t.setName("kcp client thread start");
+		t.start();
 	}
 
 	/**
@@ -109,7 +123,7 @@ public class KcpClient extends KCP implements Runnable {
 	 * @aram rcvwnd
 	 */
 	public void wndSize(int sndwnd, int rcvwnd) {
-		this.kcp.WndSize(sndwnd, rcvwnd);
+		KcpClient.kcp.WndSize(sndwnd, rcvwnd);
 	}
 
 	/**
@@ -129,14 +143,22 @@ public class KcpClient extends KCP implements Runnable {
 		long start, end;
 		while (running) {
 			try {
+				// 1
+				String str = getQueUDP();
+				if (str != null) {
+					// 2
+					onReceive(str.getBytes());
+				}
 				start = System.currentTimeMillis();// 开始时间
+				// 3
 				this.kcp.Update(start); //
 				end = System.currentTimeMillis();// 结束时间
-				if (end - start < this.interval) {
+				if (end - start < interval) {
 					synchronized (waitLock) {
 						try {
-							// System.out.println("导致线程进入等待状态直到它被通知或者经过指定的时间。这些方法只能在同步方法中调用");
+							// System.out.println("等待开始");
 							waitLock.wait(this.interval - end + start);
+							// System.out.println("等待结束");
 						} catch (InterruptedException ex) {
 							ex.printStackTrace();
 						}
@@ -155,9 +177,9 @@ public class KcpClient extends KCP implements Runnable {
 	 * @param bb
 	 */
 	public void send(byte[] bb) {
-		if (this != null) {
+		if (KcpClient.kcp != null) {
 			// System.out.print(bb.length);
-			int sendResult = this.kcp.Send(bb);
+			int sendResult = KcpClient.kcp.Send(bb);
 			if (sendResult == 0) {
 				System.out.println("数据加入发送队列成功");
 			}
