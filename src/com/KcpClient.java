@@ -7,8 +7,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -16,7 +14,7 @@ public class KcpClient extends KCP implements Runnable {
 
 	private static DatagramSocket datagramSocket;
 	private static DatagramPacket datagramPacket;
-	public static List<DatagramPacket> rcv_udp_que = new ArrayList<DatagramPacket>(1024);
+	public static Queue<DatagramPacket> rcv_udp_que = new LinkedBlockingQueue<DatagramPacket>(1024);
 	public static Queue<byte[]> rcv_byte_que = new LinkedBlockingQueue<byte[]>();
 
 	private InetSocketAddress remote;
@@ -70,14 +68,15 @@ public class KcpClient extends KCP implements Runnable {
 	 * 
 	 * @return
 	 */
-	public static String getQueUDP() {
+	public static byte[] getQueUDP() {
+		byte[] byteBuffer;
 		if (rcv_udp_que.size() == 0) {
 			return null;
 		}
-		DatagramPacket datagramPacket = rcv_udp_que.get(0);
-		rcv_udp_que.remove(0);
-		String receiveStr = new String(datagramPacket.getData(), 0, datagramPacket.getLength());
-		return receiveStr;
+		// 获取第一个并且移除
+		DatagramPacket datagramPacket = rcv_udp_que.remove();
+		byteBuffer = datagramPacket.getData();
+		return byteBuffer;
 	}
 
 	public void connect(InetSocketAddress addr) {
@@ -148,22 +147,22 @@ public class KcpClient extends KCP implements Runnable {
 		long start, end;
 		while (running) {
 			try {
-				// 1
-				String str = getQueUDP();
-				if (str != null) {
-					// 2
-					onReceive(str.getBytes());
+				// 1 从队列取第一个消息
+				byte[] buffer = getQueUDP();
+				if (buffer != null) {
+					// 2 input/receive
+					onReceive(buffer);
 				}
 				start = System.currentTimeMillis();// 开始时间
-				// 3
+				// 3 Send
 				while (!rcv_byte_que.isEmpty()) {
-					byte[] buffer = rcv_byte_que.remove();
-					int sendResult = KcpClient.kcp.Send(buffer);
+					byte[] receiveBuffer = rcv_byte_que.remove();
+					int sendResult = KcpClient.kcp.Send(receiveBuffer);
 					if (sendResult == 0) {
 						System.out.println("数据加入发送队列成功");
 					}
 				}
-				// 4
+				// 4 update
 				this.kcp.Update(start); //
 
 				end = System.currentTimeMillis();// 结束时间
@@ -194,7 +193,7 @@ public class KcpClient extends KCP implements Runnable {
 
 		if (running) {
 			rcv_byte_que.add(bb);
-			// this.needUpdate = true;
+			this.needUpdate = true;// ？？？？？
 		}
 	}
 
@@ -223,7 +222,7 @@ public class KcpClient extends KCP implements Runnable {
 			if (result == 0) {
 				int dataLength = kcp.Recv(receiveByte);
 				if (dataLength > 0) {
-					System.out.println(new String(receiveByte, 0, dataLength));
+					System.out.println("客户端接收到：" + new String(receiveByte, 0, dataLength));
 				}
 			}
 		}

@@ -61,21 +61,6 @@ public class KcpServer extends KCP implements Runnable {
 	}
 
 	/**
-	 * 获取消息队列第一个消息
-	 * 
-	 * @return
-	 */
-	public static String getQueUDP() {
-		if (rcv_udp_que.size() == 0) {
-			return null;
-		}
-		DatagramPacket datagramPacket = rcv_udp_que.remove();
-		String receiveStr = new String(datagramPacket.getData(), 0, datagramPacket.getLength());
-		System.out.println(receiveStr);
-		return receiveStr;
-	}
-
-	/**
 	 * 开启线程处理kcp状态
 	 */
 	public void start() {
@@ -141,6 +126,22 @@ public class KcpServer extends KCP implements Runnable {
 	}
 
 	/**
+	 * 获取消息队列第一个消息
+	 * 
+	 * @return
+	 */
+	public static byte[] getQueUDP() {
+		byte[] byteBuffer;
+		if (rcv_udp_que.size() == 0) {
+			return null;
+		}
+		// 获取第一个并且移除
+		DatagramPacket datagramPacket = rcv_udp_que.remove();
+		byteBuffer = datagramPacket.getData();
+		return byteBuffer;
+	}
+
+	/**
 	 * 开启线程处理kcp状态
 	 */
 	@Override
@@ -148,17 +149,17 @@ public class KcpServer extends KCP implements Runnable {
 		long start, end;
 		while (running) {
 			try {
-				// 1
-				String str = getQueUDP();
-				if (str != null) {
-					// 2
-					onReceive(str.getBytes());
+				// 1 从队列取第一个消息
+				byte[] buffer = getQueUDP();
+				if (buffer != null) {
+					// 2 input/receive
+					onReceive(buffer);
 				}
 				start = System.currentTimeMillis();// 开始时间
 				// 3
 				while (!rcv_byte_que.isEmpty()) {
-					byte[] buffer = rcv_byte_que.remove();
-					int sendResult = KcpServer.kcp.Send(buffer);
+					byte[] receiveBuffer = rcv_byte_que.remove();
+					int sendResult = KcpServer.kcp.Send(receiveBuffer);
 					if (sendResult == 0) {
 						System.out.println("数据加入发送队列成功");
 					}
