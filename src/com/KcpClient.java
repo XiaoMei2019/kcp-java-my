@@ -21,7 +21,6 @@ public class KcpClient extends KCP implements Runnable {
 	private InetSocketAddress remote;
 	private volatile boolean running;
 	private final Object waitLock = new Object();
-	private boolean needUpdate;
 	private static KCP kcp;
 
 	public KcpClient(long conv_) throws SocketException, UnknownHostException {
@@ -143,7 +142,7 @@ public class KcpClient extends KCP implements Runnable {
 				start = System.currentTimeMillis();// 开始时间
 				// 3 Send
 				while (!rcv_byte_que.isEmpty()) {
-					byte[] receiveBuffer = rcv_byte_que.remove();
+					byte[] receiveBuffer = rcv_byte_que.poll();
 					int sendResult = KcpClient.kcp.Send(receiveBuffer);
 					if (sendResult == 0) {
 						System.out.println("数据加入发送队列成功");
@@ -180,7 +179,6 @@ public class KcpClient extends KCP implements Runnable {
 
 		if (running) {
 			rcv_byte_que.add(bb);
-			this.needUpdate = true;// ？？？？？
 		}
 	}
 
@@ -195,21 +193,24 @@ public class KcpClient extends KCP implements Runnable {
 	}
 
 	/**
-	 * 收到服务器消息
+	 * 收到客户端消息
 	 *
 	 * @param dp
 	 */
 	public static void onReceive(byte[] buffer) {
 		int result = 0;
-		byte[] receiveByte = new byte[1024];
 		if (kcp != null) {
 			result = kcp.Input(buffer);
-			System.out.println(result);
+			// System.out.println("服务器input返回结果" + result);
 			// 返回0表示正常
 			if (result == 0) {
-				int dataLength = kcp.Recv(receiveByte);
-				if (dataLength > 0) {
-					System.out.println("客户端接收到：" + new String(receiveByte, 0, dataLength));
+				int size = kcp.PeekSize();
+				if (size > 0) {
+					byte[] receiveByte = new byte[size];
+					int dataLength = kcp.Recv(receiveByte);
+					if (dataLength > 0) {
+						System.out.println(new String(receiveByte, 0, dataLength));
+					}
 				}
 			}
 		}

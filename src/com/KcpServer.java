@@ -144,10 +144,10 @@ public class KcpServer extends KCP implements Runnable {
 				start = System.currentTimeMillis();// 开始时间
 				// 3
 				while (!rcv_byte_que.isEmpty()) {
-					byte[] receiveBuffer = rcv_byte_que.remove();
+					byte[] receiveBuffer = rcv_byte_que.poll();
 					int sendResult = KcpServer.kcp.Send(receiveBuffer);
 					if (sendResult == 0) {
-						System.out.println("数据加入发送队列成功");
+						// System.out.println("数据加入发送队列成功");
 					}
 				}
 				// 4
@@ -176,11 +176,10 @@ public class KcpServer extends KCP implements Runnable {
 	 * 
 	 * @param bb
 	 */
-	public void send(byte[] bb) {
+	public static void send(byte[] bb) {
 
 		if (running) {
 			rcv_byte_que.add(bb);
-			// this.needUpdate = true;
 		}
 	}
 
@@ -191,15 +190,21 @@ public class KcpServer extends KCP implements Runnable {
 	 */
 	public static void onReceive(byte[] buffer) {
 		int result = 0;
-		byte[] receiveByte = new byte[1024];
 		if (kcp != null) {
 			result = kcp.Input(buffer);
-			System.out.println("服务器input返回结果" + result);
+			// System.out.println("服务器input返回结果" + result);
 			// 返回0表示正常
 			if (result == 0) {
-				int dataLength = kcp.Recv(receiveByte);
-				if (dataLength > 0) {
-					System.out.println(new String(receiveByte, 0, dataLength));
+				int size = kcp.PeekSize();
+				if (size > 0) {
+					byte[] receiveByte = new byte[size];
+					int dataLength = kcp.Recv(receiveByte);
+					if (dataLength > 0) {
+						// 服务器收到的数据
+						System.out.println(new String(receiveByte, 0, dataLength));
+						// 把收到的消息会送给客户端
+						KcpServer.send(receiveByte);
+					}
 				}
 			}
 		}
