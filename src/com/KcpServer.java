@@ -6,6 +6,7 @@ import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.Arrays;
 import java.util.Queue;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -17,7 +18,7 @@ public class KcpServer extends KCP implements Runnable {
 	private static DatagramPacket datagramPacket;
 	private InetSocketAddress remote;
 	private volatile static boolean running;
-	public static Queue<DatagramPacket> rcv_udp_que = new LinkedBlockingDeque<DatagramPacket>();
+	public static Queue<byte[]> rcv_udp_que = new LinkedBlockingDeque<byte[]>();
 	public static Queue<byte[]> rcv_byte_que = new LinkedBlockingQueue<byte[]>();
 	private final Object waitLock = new Object();
 	private static KCP kcp;
@@ -52,8 +53,9 @@ public class KcpServer extends KCP implements Runnable {
 			datagramSocket.receive(datagramPacket);
 			// System.out.println(datagramPacket.getData());
 			// System.out.println("获得数据");
-			rcv_udp_que.add(datagramPacket);// 放入缓冲队列
-			System.out.println("队列大小" + rcv_udp_que.size());
+			byte[] bytes = Arrays.copyOf(receMsgs, datagramPacket.getLength());
+			rcv_udp_que.add(bytes);// 放入缓冲队列
+			// System.out.println("队列大小" + rcv_udp_que.size());
 		} catch (Exception e) {
 			// System.out.println("超时未获得数据");
 			e.printStackTrace();
@@ -126,22 +128,6 @@ public class KcpServer extends KCP implements Runnable {
 	}
 
 	/**
-	 * 获取消息队列第一个消息
-	 * 
-	 * @return
-	 */
-	public static byte[] getQueUDP() {
-		byte[] byteBuffer;
-		if (rcv_udp_que.size() == 0) {
-			return null;
-		}
-		// 获取第一个并且移除
-		DatagramPacket datagramPacket = rcv_udp_que.remove();
-		byteBuffer = datagramPacket.getData();
-		return byteBuffer;
-	}
-
-	/**
 	 * 开启线程处理kcp状态
 	 */
 	@Override
@@ -150,7 +136,7 @@ public class KcpServer extends KCP implements Runnable {
 		while (running) {
 			try {
 				// 1 从队列取第一个消息
-				byte[] buffer = getQueUDP();
+				byte[] buffer = rcv_udp_que.poll();
 				if (buffer != null) {
 					// 2 input/receive
 					onReceive(buffer);
