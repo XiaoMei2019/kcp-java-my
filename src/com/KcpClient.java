@@ -9,15 +9,20 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class KcpClient extends KCP implements Runnable {
 
 	private static DatagramSocket datagramSocket;
 	private static DatagramPacket datagramPacket;
 	public static List<DatagramPacket> rcv_udp_que = new ArrayList<DatagramPacket>(1024);
+	public static Queue<byte[]> rcv_byte_que = new LinkedBlockingQueue<byte[]>();
+
 	private InetSocketAddress remote;
 	private volatile boolean running;
 	private final Object waitLock = new Object();
+	private boolean needUpdate;
 	private static KCP kcp;
 
 	public KcpClient(long conv_) throws SocketException, UnknownHostException {
@@ -151,7 +156,16 @@ public class KcpClient extends KCP implements Runnable {
 				}
 				start = System.currentTimeMillis();// 开始时间
 				// 3
+				while (!rcv_byte_que.isEmpty()) {
+					byte[] buffer = rcv_byte_que.remove();
+					int sendResult = KcpClient.kcp.Send(buffer);
+					if (sendResult == 0) {
+						System.out.println("数据加入发送队列成功");
+					}
+				}
+				// 4
 				this.kcp.Update(start); //
+
 				end = System.currentTimeMillis();// 结束时间
 				if (end - start < interval) {
 					synchronized (waitLock) {
@@ -172,17 +186,15 @@ public class KcpClient extends KCP implements Runnable {
 	}
 
 	/**
-	 * 发送消息
-	 *
+	 * 发送消息加入发送缓冲的队列
+	 * 
 	 * @param bb
 	 */
 	public void send(byte[] bb) {
-		if (KcpClient.kcp != null) {
-			// System.out.print(bb.length);
-			int sendResult = KcpClient.kcp.Send(bb);
-			if (sendResult == 0) {
-				System.out.println("数据加入发送队列成功");
-			}
+
+		if (running) {
+			rcv_byte_que.add(bb);
+			// this.needUpdate = true;
 		}
 	}
 

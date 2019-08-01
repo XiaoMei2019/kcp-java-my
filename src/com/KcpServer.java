@@ -6,9 +6,9 @@ import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class KcpServer extends KCP implements Runnable {
 
@@ -17,7 +17,8 @@ public class KcpServer extends KCP implements Runnable {
 	private static DatagramPacket datagramPacket;
 	private InetSocketAddress remote;
 	private volatile static boolean running;
-	public static List<DatagramPacket> rcv_udp_que = new ArrayList<DatagramPacket>(1024);
+	public static Queue<DatagramPacket> rcv_udp_que = new LinkedBlockingDeque<DatagramPacket>();
+	public static Queue<byte[]> rcv_byte_que = new LinkedBlockingQueue<byte[]>();
 	private final Object waitLock = new Object();
 	private static KCP kcp;
 
@@ -68,9 +69,9 @@ public class KcpServer extends KCP implements Runnable {
 		if (rcv_udp_que.size() == 0) {
 			return null;
 		}
-		DatagramPacket datagramPacket = rcv_udp_que.get(0);
-		rcv_udp_que.remove(0);
+		DatagramPacket datagramPacket = rcv_udp_que.remove();
 		String receiveStr = new String(datagramPacket.getData(), 0, datagramPacket.getLength());
+		System.out.println(receiveStr);
 		return receiveStr;
 	}
 
@@ -155,14 +156,22 @@ public class KcpServer extends KCP implements Runnable {
 				}
 				start = System.currentTimeMillis();// 开始时间
 				// 3
-				KcpServer.kcp.Update(start); //
+				while (!rcv_byte_que.isEmpty()) {
+					byte[] buffer = rcv_byte_que.remove();
+					int sendResult = KcpServer.kcp.Send(buffer);
+					if (sendResult == 0) {
+						System.out.println("数据加入发送队列成功");
+					}
+				}
+				// 4
+				this.kcp.Update(start); //
 				end = System.currentTimeMillis();// 结束时间
 				if (end - start < interval) {
 					synchronized (waitLock) {
 						try {
-							System.out.println("等待开始");
+							// System.out.println("等待开始");
 							waitLock.wait(this.interval - end + start);
-							System.out.println("等待结束");
+							// System.out.println("等待结束");
 						} catch (InterruptedException ex) {
 							ex.printStackTrace();
 						}
@@ -176,16 +185,15 @@ public class KcpServer extends KCP implements Runnable {
 	}
 
 	/**
-	 * 发送消息
-	 *
+	 * 发送消息加入发送缓冲的队列
+	 * 
 	 * @param bb
 	 */
-	public void send(ByteBuffer bb) {
-		if (this != null) {
-			int sendResult = this.kcp.Send(bb.array());
-			if (sendResult == 0) {
-				System.out.println("数据加入发送队列");
-			}
+	public void send(byte[] bb) {
+
+		if (running) {
+			rcv_byte_que.add(bb);
+			// this.needUpdate = true;
 		}
 	}
 
