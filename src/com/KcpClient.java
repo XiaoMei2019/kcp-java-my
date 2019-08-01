@@ -21,7 +21,7 @@ public class KcpClient extends KCP implements Runnable {
 	private InetSocketAddress remote;
 	private volatile boolean running;
 	private final Object waitLock = new Object();
-	private static KCP kcp;
+	public static KCP kcp;
 
 	public KcpClient(long conv_) throws SocketException, UnknownHostException {
 		super(conv_);
@@ -168,6 +168,7 @@ public class KcpClient extends KCP implements Runnable {
 				e.printStackTrace();
 			}
 		}
+		System.out.println("数据传输完毕，客户端关闭！");
 	}
 
 	/**

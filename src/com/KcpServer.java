@@ -165,7 +165,7 @@ public class KcpServer extends KCP implements Runnable {
 					}
 				}
 			} catch (Exception e) {
-				running = false;
+				// running = false;
 				e.printStackTrace();
 			}
 		}
